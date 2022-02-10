@@ -82,7 +82,16 @@ defmodule AeMdw.Db.Sync.Transaction do
   @spec sync(non_neg_integer(), non_neg_integer(), non_neg_integer()) :: pos_integer()
   def sync(from_height, to_height, txi) when from_height <= to_height do
     tracker = Sync.progress_logger(&sync_generation/2, @log_freq, &log_msg/2)
+    to_height = min(from_height + 100, to_height)
+    :fprof.trace([:start]);
     next_txi = Enum.reduce(from_height..to_height, txi, tracker)
+
+    :fprof.trace([:stop]);
+    :fprof.profile();
+    :fprof.analyse([:totals, {:dest, 'output.fprof'}]);
+    :fprof.stop()
+
+    raise "stop #{to_height}"
 
     next_txi
   end
