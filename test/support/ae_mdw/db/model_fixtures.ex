@@ -7,14 +7,22 @@ defmodule AeMdw.Db.ModelFixtures do
 
   require Model
 
-  @spec new_txi :: Txs.txi()
-  def new_txi(), do: :ets.update_counter(:counters, :txi, {2, 1})
+  @spec init() :: :ok
+  def init do
+    :ets.new(:counters, [:named_table, :set, :public])
+    :ets.insert(:counters, {:txi, -1})
+    :ets.insert(:counters, {:kbi, -1})
 
-  @spec new_kbi :: Blocks.height()
-  def new_kbi(), do: :ets.update_counter(:counters, :kbi, {2, 1})
+    :ok
+  end
+  @spec new_txi() :: Txs.txi()
+  def new_txi, do: :ets.update_counter(:counters, :txi, {2, 1})
+
+  @spec new_kbi() :: Blocks.height()
+  def new_kbi, do: :ets.update_counter(:counters, :kbi, {2, 1})
 
   @spec new_block() :: Model.block()
-  def new_block() do
+  def new_block do
     Model.block(
       index: {new_kbi(), -1},
       tx_index: Enum.random(1..1_000_000),
