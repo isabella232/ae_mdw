@@ -29,7 +29,7 @@ defmodule AeMdw.Database do
 
   defmacro use_rocksdb?(tab) do
     quote do
-      unquote(tab) == Model.Block or unquote(tab) == Model.Tx
+      unquote(tab) == Model.Block or unquote(tab) == Model.Tx or unquote(tab) == Model.Aex9Balance
     end
   end
 
@@ -57,6 +57,10 @@ defmodule AeMdw.Database do
   def dirty_prev(tab, key), do: :mnesia.dirty_prev(tab, key)
 
   @spec dirty_write(table(), record()) :: :ok
+  def dirty_write(table, record) when use_rocksdb?(table) do
+    RocksDbCF.dirty_put(table, record)
+  end
+
   def dirty_write(table, record), do: :mnesia.dirty_write(table, record)
 
   @spec dirty_select(table(), list()) :: [term()]

@@ -66,16 +66,18 @@ defmodule AeMdw.Db.ContractCallMutation do
     DBContract.call_write(create_txi, txi, fun_arg_res)
     DBContract.logs_write(create_txi, txi, call_rec)
 
-    with true <- Contract.is_aex9?(contract_pk),
-         {:ok, method_name, method_args} <-
-           Contract.extract_non_stateful_aex9_function(fun_arg_res) do
-      update_aex9_presence(
-        contract_pk,
-        caller_pk,
-        txi,
-        method_name,
-        method_args
-      )
+    if Contract.is_aex9?(contract_pk) and Contract.is_aex9_successful_call?(fun_arg_res) do
+      %{function: method_name, arguments: method_args} = fun_arg_res
+
+      if not Contract.is_non_stateful_aex9_function?(method_name) do
+        update_aex9_presence(
+          contract_pk,
+          caller_pk,
+          txi,
+          method_name,
+          method_args
+        )
+      end
     end
 
     if aex9_meta_info do
@@ -89,17 +91,57 @@ defmodule AeMdw.Db.ContractCallMutation do
   # Private functions
   #
   defp update_aex9_presence(contract_pk, caller_pk, txi, method_name, method_args) do
-    account_pk =
-      if method_name in ["burn", "swap"] do
-        caller_pk
-      else
-        Contract.get_aex9_destination_address(method_name, method_args)
-      end
+    updated? =
+      update_aex9_presence_and_balance(method_name, method_args, contract_pk, caller_pk, txi)
 
-    if account_pk do
-      DBContract.aex9_write_presence(contract_pk, txi, account_pk)
-    else
+    if not updated? do
       AsyncTasks.Producer.enqueue(:update_aex9_presence, [contract_pk])
+    end
+  end
+
+  defp update_aex9_presence_and_balance(
+         "burn",
+         [%{type: :int, value: value}],
+         contract_pk,
+         caller_pk,
+         txi
+       ) do
+    DBContract.aex9_burn_balance(contract_pk, caller_pk, value)
+    DBContract.aex9_write_presence(contract_pk, txi, caller_pk)
+    true
+  end
+
+  defp update_aex9_presence_and_balance("swap", [], contract_pk, caller_pk, txi) do
+    DBContract.aex9_delete_balance(contract_pk, caller_pk)
+    DBContract.aex9_write_presence(contract_pk, txi, caller_pk)
+    true
+  end
+
+  defp update_aex9_presence_and_balance(
+         "mint",
+         [
+           %{type: :address, value: to_pk},
+           %{type: :int, value: value}
+         ],
+         contract_pk,
+         _caller_pk,
+         txi
+       ) do
+    DBContract.aex9_mint_balance(contract_pk, to_pk, value)
+    DBContract.aex9_write_presence(contract_pk, txi, to_pk)
+  end
+
+  defp update_aex9_presence_and_balance(method_name, method_args, contract_pk, caller_pk, txi) do
+    with {from_pk, to_pk, value} <-
+           Contract.get_aex9_transfer(caller_pk, method_name, method_args),
+         DBContract.aex9_transfer_balance(contract_pk, from_pk, to_pk, value) do
+      DBContract.aex9_write_presence(contract_pk, txi, from_pk)
+      DBContract.aex9_write_presence(contract_pk, txi, to_pk)
+      true
+    else
+      _nil_or_error ->
+        DBContract.aex9_invalidate_balances(contract_pk)
+        false
     end
   end
 end
